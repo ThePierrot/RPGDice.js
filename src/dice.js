@@ -36,8 +36,8 @@ function rdRoll(entry) {
 // Random number generator for .rd rolls.
 function rdDiceRanGen(entry) {
     var results = entry.match(/\d+/g);
-    amount = parseInt(results[0]);
-    type = parseInt(results[1]);
+    var amount = parseInt(results[0]);
+    var type = parseInt(results[1]);
     return amount * Math.floor(Math.random() * type + 1);
 }
 
