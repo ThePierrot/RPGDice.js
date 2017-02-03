@@ -3,10 +3,20 @@
 //var Blaysiel = {
 //    input: ""
 //}
-//Blaysiel.input = ".rd 3d20 +99d100- 900 +73随便丢";
 // Used for test purpose, omitted.
 
+Blaysiel.input = ".rd 3d6 + 2d2000 + 4 - 10"; // Dice Machine interface
+
+
 var diceInput = Blaysiel.input;
+
+var settings = {
+    amountThreshold: 100,
+    sideThreshold: 1000,
+    maxChunks: 10,
+    checkSyntax: /^\s\d+d\d+((\s*(\+|-)\s*\d+d\d+)|(\s*(\+|-)\s*\d+))*/g,
+    chopSyntax: /(^\s*\d+d\d+)|((\+|-)(\s*\d+d\d+))|((\+|-)\s*\d+)/g
+}
 
 // Basic dice class.
 function Dice(type) {
@@ -30,13 +40,7 @@ function diceParse(entry) {
     output = "";
     switch (diceType) {
         case ".rd": // Normal rolls
-            result = rdParse(diceContent);
-            if (result) {
-                return rdPrinter(result);
-            }
-            else {
-                return "";
-            }
+            return rdPrinter(rdParse(diceContent));
         default:
             return "";
     }
@@ -44,69 +48,90 @@ function diceParse(entry) {
 
 // Parser of rd rolls
 function rdParse(entry) {
-    syntax = entry.match(/^\s\d{0,2}d\d{0,3}((\s*(\+|-)\s*\d{0,2}d\d{0,3})|(\s*(\+|-)\s*\d{0,3}))*/g);
-    if (syntax) { // syntax check
-        var comment = entry.substring(syntax[0].length);
+    expressions = entry.match(settings.checkSyntax);
+    if (expressions) { // syntax check
+        var comment = entry.substring(expressions[0].length);
         var sum = 0
         var bonus = 0;
+        var chunkResult;
         var resultCollection = [];
-        var diceChunks = syntax[0].match(/(^\s*\d+d\d+)|((\+|-)(\s*\d+d\d+))|((\+|-)\s*\d+)/g);
-        if (diceChunks.length > 10) // drop too long expressions
+        var diceChunks = expressions[0].match(settings.chopSyntax);
+        if (diceChunks.length > settings.maxChunks) // drop too long expressions
         {
-            return "";
+            return {
+                error: 101,
+            };
         }
         for (var i = 0; i < diceChunks.length; i++) {
             if (diceChunks[i].charAt(0) === "+")
             {
-                if (diceChunks[i].match(/\d+d\d+/g))
-                {
-                    var amountAndSides = diceChunks[i].match(/\d+/g);
-                    results = rdRollDices(parseInt(amountAndSides[0]),parseInt(amountAndSides[1]));
-                    for (i2 = 0; i2 < results.length; i2++) {
-                        sum += results[i2];
-                    }
-                    resultCollection = resultCollection.concat(results);
+                chunkResult = rdChunkSum (diceChunks, i);
+                if (!chunkResult) {
+                    return {
+                        error: 102,
+                    };
                 }
-                else {
-                    bonusVal = parseInt(diceChunks[i].match(/\d+/g));
-                    bonus += bonusVal;
-                    sum += bonusVal;
-                }
+                sum += chunkResult.sum;
+                bonus += chunkResult.bonus;
+                resultCollection = resultCollection.concat(chunkResult.results);
             }
             else if (diceChunks[i].charAt(0) === "-") {
-                if (diceChunks[i].match(/\d+d\d+/g))
-                {
-                    var amountAndSides = diceChunks[i].match(/\d+/g);
-                    results = rdRollDices(amountAndSides[0], amountAndSides[1]);
-                    for (var i3 = 0; i3 < results.length; i3++) {
-                        sum -= results[i3];
-                    }
-                    resultCollection = resultCollection.concat(results);
+                chunkResult = rdChunkSum (diceChunks, i);
+                if (!chunkResult) {
+                    return {
+                        error: 102,
+                    };
                 }
-                else {                                          // if not + or -
-                    bonusVal = parseInt(diceChunks[i].match(/\d+/g));
-                    bonus -= bonusVal;
-                    sum -= bonusVal;
-                }
+                sum -= chunkResult.sum;
+                bonus -= chunkResult.bonus;
+                resultCollection = resultCollection.concat(chunkResult.results);
             }
             else {
-                var amountAndSides = diceChunks[i].match(/\d+/g);
-                results = rdRollDices(parseInt(amountAndSides[0]),parseInt(amountAndSides[1]));
-                for (i4 = 0; i4 < results.length; i4++) {
-                    sum += results[i4];
+                diceChunks[i] = "+" + diceChunks[i];
+                chunkResult = rdChunkSum (diceChunks, i);
+                if (!chunkResult) {
+                    return {
+                        error: 102,
+                    };
                 }
-                resultCollection = resultCollection.concat(results);
+                sum += chunkResult.sum;
+                bonus += chunkResult.bonus;
+                resultCollection = resultCollection.concat(chunkResult.results);
             }
         }
-        var output = {
+        return {
             sum: sum,
             bonus: bonus,
             comment: comment,
             resultCollection: resultCollection
-        };
-        return output;
+        }
     }
     return "";
+}
+
+function rdChunkSum (diceChunks, counter) {
+    var sum = 0;
+    var bonus = 0;
+    var results = [];
+    if (diceChunks[counter].match(/\d+d\d+/g))
+    {
+        var amountAndSides = diceChunks[counter].match(/\d+/g);
+        results = rdRollDices(parseInt(amountAndSides[0]), parseInt(amountAndSides[1]));
+        if (amountAndSides[0] > settings.amountThreshold || amountAndSides[1] > settings.sideThreshold) {
+            return false;
+        }
+        for (var i = 0; i < results.length; i++) {
+            sum += results[i];
+        }
+    }
+    else {
+        bonus = parseInt(diceChunks[counter].match(/\d+/g));
+    }
+    return {
+        sum: sum,
+        bonus: bonus,
+        results: results,
+    }
 }
 
 // rdParse helper
@@ -121,6 +146,14 @@ function rdRollDices(amount, sides) {
 function rdPrinter(entry)
 {
     var output = ""
+    if (entry.error !== 0) {
+        switch(entry.error) {
+            case 101:
+                return "错误101：表达式过长";
+            case 102:
+                return "错误102：变量过大";
+        }
+    }
     if (entry.comment) {
         output += "因为：";
         output += entry.comment + "，";
@@ -141,7 +174,7 @@ function rdPrinter(entry)
             output += entry.resultCollection[j] + ", ";
         }
         if (entry.bonus) {
-            output += "你的总加值为：";
+            output += "你的总调整值为：";
             output += entry.bonus;
             output += "，点数总和为：";
         }
@@ -157,6 +190,6 @@ function rdPrinter(entry)
 //    output: ""
 //}
 
-Iturya.output = diceParse(diceInput);
+Iturya.output = diceParse(diceInput); // Dice Machine interface
 
-// console.log(Iturya.output);
+//console.log(Iturya.output);
