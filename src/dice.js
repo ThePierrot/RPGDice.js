@@ -153,9 +153,9 @@ function rdPrinter(entry)
     return output;
 }
 
-var Iturya = {
-    output: ""
-}
+//var Iturya = {
+//    output: ""
+//}
 
 Iturya.output = diceParse(diceInput);
 
